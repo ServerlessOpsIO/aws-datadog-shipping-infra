@@ -17,9 +17,6 @@ jobs:
       - name: Setup job workspace
         uses: ServerlessOpsIO/gha-setup-workspace@v1
 
-      - name: Setup Python
-        uses: ServerlessOpsIO/gha-setup-python@v1
-
       - name: Assume AWS Credentials
         uses: ServerlessOpsIO/gha-assume-aws-credentials@v1
         with:
@@ -53,9 +50,6 @@ jobs:
         uses: ServerlessOpsIO/gha-setup-workspace@v1
         with:
           checkout_artifact: true
-
-      - name: Setup Python
-        uses: ServerlessOpsIO/gha-setup-python@v1
 
       - name: Assume AWS Credentials
         uses: ServerlessOpsIO/gha-assume-aws-credentials@v1
