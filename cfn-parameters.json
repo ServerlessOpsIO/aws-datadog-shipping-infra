@@ -1,0 +1,5 @@
+{
+    "AwsOrgId": $secrets.AWS_ORG_ID,
+    "DatadogApiKey": $secrets.DATADOG_API_KEY,
+    "DatadogSite": "us5.datadoghq.com",
+}

@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AWS -> Datadog shipping infrastructure
+
+Parameters:
+  AwsOrgId:
+    Type: String
+  DatadogSite:
+    Type: String
+  DatadogApiKey:
+    Type: String
+    NoEcho: 'true'
+
+Resources:
+  MetricsStreamStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: "./stacks/metrics-stream-template.yaml"
+      Parameters:
+        DatadogApiKey: !Ref DatadogApiKey
+        DatadogSite: !Ref DatadogSite
+        FilterMethod: 'Exclude'
+        FirstNamespace: 'AWS/Config'
+        SecondNamespace: 'AWS/Usage'
+        ThirdNamespace: ''
+
+  MetricsSinkStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: "./stacks/metrics-sink-template.yaml"
+      Parameters:
+        AwsOrgId: !Ref AwsOrgId
+
+  LogsStreamStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: "./stacks/logs-stream-template.yaml"
+      Parameters:
+        AwsOrgId: !Ref AwsOrgId
+        DatadogApiKey: !Ref DatadogApiKey
+        DatadogSite: !Ref DatadogSite

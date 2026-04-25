@@ -1,0 +1,13 @@
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: aws-datadog-infra
+  description: Datadog observability infrastructure
+  annotations:
+    github.com/project-slug: ServerlessOpsIO/aws-datadog-infra
+spec:
+  type: cloud-config
+  lifecycle: production
+  owner: group:0319y80a3hmm9y7
+  system: system:datadog

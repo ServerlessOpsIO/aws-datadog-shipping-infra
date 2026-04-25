@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudWatch OAM Sink
+
+Parameters:
+  AwsOrgId:
+    Type: String
+
+Resources:
+  OamSink:
+    Type: AWS::Oam::Sink
+    Properties:
+      Name: OrganizationSink
+      Policy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Resource: "*"
+            Action:
+              - "oam:CreateLink"
+              - "oam:UpdateLink"
+            Condition:
+              StringEquals:
+                aws:PrincipalOrgID: !Ref AwsOrgId
+              ForAllValues:StringEquals:
+                oam:ResourceTypes:
+                  - AWS::CloudWatch::Metric
+                  - AWS::XRay::Trace
+                  - AWS::ApplicationInsights::Application
+                  - AWS::InternetMonitor::Monitor
+                  # No need for this because we stream logs from accounts
+                  # to Firehose for shipping to Datadog
+                  # - AWS::Logs::LogGroup
