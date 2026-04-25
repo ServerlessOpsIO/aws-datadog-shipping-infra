@@ -1,0 +1,76 @@
+name: Branch
+
+on:
+  workflow_dispatch:
+  push:
+    branches-ignore:
+      - 'main'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Setup job workspace
+        uses: ServerlessOpsIO/gha-setup-workspace@v1
+
+      - name: Setup Python
+        uses: ServerlessOpsIO/gha-setup-python@v1
+
+      - name: Assume AWS Credentials
+        uses: ServerlessOpsIO/gha-assume-aws-credentials@v1
+        with:
+          build_aws_account_id: ${{ secrets.AWS_CICD_ACCOUNT_ID }}
+
+      - name: Install AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Validate main template
+        run: sam validate --lint
+
+      - name: Validate child templates
+        run: find ./stacks -type f -exec sam validate --lint --template-file '{}' \;
+
+      - name: Store Artifacts
+        uses: ServerlessOpsIO/gha-store-artifacts@v1
+        with:
+          use_aws_sam: true
+
+
+  deploy:
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Setup job workspace
+        uses: ServerlessOpsIO/gha-setup-workspace@v1
+        with:
+          checkout_artifact: true
+
+      - name: Setup Python
+        uses: ServerlessOpsIO/gha-setup-python@v1
+
+      - name: Assume AWS Credentials
+        uses: ServerlessOpsIO/gha-assume-aws-credentials@v1
+        with:
+          build_aws_account_id: ${{ secrets.AWS_CICD_ACCOUNT_ID }}
+          deploy_aws_account_id: ${{ secrets.DEPLOYMENT_ACCOUNT_ID }}
+
+      - name: Install AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Deploy via AWS SAM
+        uses: ServerlessOpsIO/gha-deploy-aws-sam@v1
+        with:
+          aws_account_id: ${{ secrets.DEPLOYMENT_ACCOUNT_ID }}
+          cfn_capabilities: CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+          env_json: ${{ toJson(env) }}
+          vars_json: ${{ toJson(vars) }}
+          secrets_json: ${{ toJson(secrets) }}
