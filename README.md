@@ -1,41 +1,127 @@
-# aws-datadog-infra
+# aws-datadog-shipping-infra
 
-This repository contains AWS CloudFormation stacks and stacksets to automate the setup of observability infrastructure across an AWS Organization, with a focus on Datadog integration.
-
-## Features
-
-- **Datadog Metrics and Logging Integration**: Deploy CloudFormation templates to configure Datadog metrics and logging in multiple AWS accounts.
-- **Centralized Observability Account**: Set up a central AWS account to aggregate all metrics and logs from member accounts and forward them to Datadog.
-- **StackSets for Organization-wide Deployment**: Use CloudFormation StackSets to deploy observability resources across all or selected AWS accounts in your organization.
-- **Automated Resource Provisioning**: Templates include IAM roles, log forwarding, metric streams, and necessary permissions for seamless Datadog integration.
-
-## Repository Structure
-
-- `stacksets/` — CloudFormation StackSet templates for organization-wide deployment.
+This repository provides the infrastructure for shipping CloudWatch metrics and logs from AWS to Datadog. It deploys a set of nested CloudFormation stacks that together establish a centralized observability pipeline for an AWS Organization.
 
 ## Architecture Overview
 
-This solution deploys a set of AWS resources across your AWS Organization to enable centralized observability and Datadog integration:
+The infrastructure is composed of three nested stacks managed by a root SAM template (`template.yaml`). Together they create two shipping pipelines:
 
-- **Member Accounts**:
-  - Deploy IAM roles and policies to allow log and metric forwarding.
-  - Set up CloudWatch Log subscription filters and Kinesis Firehose streams to send logs to a central account or directly to Datadog.
-  - Create CloudWatch Metric Streams to forward metrics to a central account or Datadog.
-  - Establish OAM (Observability Access Manager) Links to a central OAM Sink for cross-account metric sharing.
+- **Metrics pipeline**: CloudWatch Metric Streams → Kinesis Data Firehose → Datadog
+- **Logs pipeline**: CloudWatch Logs (account-level subscription) → Kinesis Data Firehose → Datadog
 
-- **Central Observability Account**:
-  - Hosts the OAM Sink, which receives metrics from member accounts via OAM Links.
-  - Aggregates logs and metrics, and forwards them to Datadog using Kinesis Firehose and Metric Streams.
-  - Manages IAM roles and policies for secure cross-account access.
+Metrics are streamed from the management account and include linked account metrics from across the organization. Logs are collected organization-wide via a shared CloudWatch Logs destination that member accounts can subscribe to.
 
-## Template Relationships
+```mermaid
+flowchart TD
+    subgraph org["AWS Organization (Member Accounts)"]
+        cwl["CloudWatch Logs"]
+        cwm["CloudWatch Metrics"]
+    end
 
-- **`stacksets/datadog-integration/stackset.yaml`**: Deploys Datadog's official integration stackset to all target accounts for basic Datadog setup.
-- **`stacksets/logging/stackset.yaml`** and **`stacksets/logging/template.yaml`**: Deploy log shipping resources (IAM roles, log policies, Firehose) to member accounts for forwarding logs to the central account or Datadog.
-- **`stacksets/metrics/stackset.yaml`**, **`stacksets/metrics/oam-link-template.yaml`**, and **`stacksets/metrics/cw-cross-account-sharing-template.yaml`**: Deploy OAM Links and cross-account sharing roles to enable metric sharing from member accounts to the central account.
-- **`stacksets/datadog-shipping/stackset.yaml`** and related templates: Deploy resources in the central account to receive logs/metrics and forward them to Datadog.
-- **Root-level templates** (e.g., `template.yaml`, `stacksets-shipping-template.yaml`): Compose and orchestrate the deployment of the above stacksets and templates for a full organization-wide rollout.
+    subgraph mgmt["Management / Observability Account"]
+        subgraph MetricsSinkStack["MetricsSinkStack"]
+            oam["OAM Sink\n(CloudWatch, X-Ray,\nAppInsights, InternetMonitor)"]
+        end
 
-## Datadog template Updates
+        subgraph MetricsStreamStack["MetricsStreamStack"]
+            cwms["CloudWatch\nMetric Stream"]
+            mfh["Kinesis Firehose\nDATADOG-METRICS"]
+        end
 
-Due to a limitation in AWS SAM's `package` command in `template.yaml` the `DatadogIntegrationStack` `Location` parameter must be kept in sync manually with the `DatadogTemplateUrl` value.
+        subgraph LogsStreamStack["LogsStreamStack"]
+            cwdest["CloudWatch Logs\nDestination"]
+            acctpol["Account\nSubscription Policy"]
+            lfh["Kinesis Firehose\nDATADOG-LOGS"]
+        end
+    end
+
+    dd["Datadog"]
+
+    cwm -->|"OAM Links"| oam
+    cwl -->|"org-scoped\nsubscription"| cwdest
+    cwl -->|"account policy"| acctpol
+    acctpol --> lfh
+    cwdest --> lfh
+    cwms --> mfh
+    mfh --> dd
+    lfh --> dd
+```
+
+## CloudFormation Templates
+
+### `template.yaml` — Root stack
+
+The root SAM template. It accepts the top-level parameters and composes the three nested stacks.
+
+| Parameter | Description |
+|---|---|
+| `AwsOrgId` | AWS Organization ID, used to scope cross-account IAM policies |
+| `DatadogSite` | Datadog ingestion site (e.g. `us5.datadoghq.com`) |
+| `DatadogApiKey` | Datadog API key (stored as `NoEcho`) |
+
+The root stack passes these parameters down to the appropriate nested stacks. No resources are created directly in the root stack.
+
+---
+
+### `stacks/metrics-stream-template.yaml` — Metrics streaming stack
+
+Deploys the CloudWatch Metric Stream and Kinesis Firehose delivery pipeline that ships CloudWatch metrics to Datadog in OpenTelemetry format.
+
+**Key resources:**
+
+| Resource | Type | Purpose |
+|---|---|---|
+| `DatadogMetricStreamAllNamespaces` | `AWS::CloudWatch::MetricStream` | Streams all CloudWatch metrics (excluding `AWS/Config` and `AWS/Usage`) to Firehose; includes linked account metrics from the organization |
+| `DatadogMetricKinesisFirehose` | `AWS::KinesisFirehose::DeliveryStream` | Delivers metrics to the Datadog HTTP endpoint (`DATADOG-METRICS`) |
+| `DatadogStreamBackupBucket` | `AWS::S3::Bucket` | S3 backup bucket for failed Firehose deliveries (KMS-encrypted, public access blocked) |
+| `CloudWatchMetricsStreamRole` / `Policy` | IAM | Allows CloudWatch Metric Streams to put records into Firehose |
+| `FirehoseMetricsRole` / `Policy` | IAM | Allows Firehose to write to S3 |
+| `DatadogStreamLogs` | `AWS::Logs::LogGroup` | Firehose delivery and backup log streams (`/aws/kinesisfirehose/DATADOG-METRICS`) |
+
+The metric stream uses an **exclusion filter** to drop the `AWS/Config` and `AWS/Usage` namespaces. Extended percentile statistics are pre-configured for latency-sensitive namespaces (ALB, ELB, S3, API Gateway, Lambda, Step Functions, AppSync, App Runner).
+
+---
+
+### `stacks/metrics-sink-template.yaml` — CloudWatch OAM sink stack
+
+Deploys an [CloudWatch Observability Access Manager (OAM)](https://docs.aws.amazon.com/OAM/latest/APIReference/Welcome.html) sink in the central account. Member accounts in the organization link to this sink to share their CloudWatch metrics, X-Ray traces, Application Insights applications, and Internet Monitor data, making them visible to the metric stream in this account.
+
+**Key resources:**
+
+| Resource | Type | Purpose |
+|---|---|---|
+| `OamSink` | `AWS::Oam::Sink` | Org-scoped sink that accepts `CreateLink` / `UpdateLink` from any account in the organization |
+
+The sink policy restricts links to the following resource types:
+- `AWS::CloudWatch::Metric`
+- `AWS::XRay::Trace`
+- `AWS::ApplicationInsights::Application`
+- `AWS::InternetMonitor::Monitor`
+
+CloudWatch Log Groups are intentionally excluded — logs are shipped directly from member accounts via the logs stream.
+
+---
+
+### `stacks/logs-stream-template.yaml` — Logs streaming stack
+
+Deploys the Kinesis Firehose delivery pipeline and CloudWatch Logs destination for shipping logs to Datadog. An account-level subscription policy automatically subscribes all log groups in the management account. Member accounts can subscribe their log groups to the shared destination.
+
+**Key resources:**
+
+| Resource | Type | Purpose |
+|---|---|---|
+| `DatadogDeliveryStream` | `AWS::KinesisFirehose::DeliveryStream` | Delivers logs to the Datadog HTTP endpoint (`DATADOG-LOGS`), with GZIP compression and 60-second buffering |
+| `CloudWatchAccountPolicy` | `AWS::Logs::AccountPolicy` | Account-level subscription filter policy that routes all log groups (except the Firehose log group itself) to the delivery stream |
+| `DatadogLogsDestination` | `AWS::Logs::Destination` | Org-scoped CloudWatch Logs destination (`DATADOG-LOGS-FIREHOSE`) that member accounts can subscribe to |
+| `FailedDataBucket` | `AWS::S3::Bucket` | S3 backup for failed log deliveries |
+| `CloudWatchLogsRole` / `Policy` | IAM | Allows CloudWatch Logs to put records into Firehose |
+| `FirehoseLogsRole` / `Policy` | IAM | Allows Firehose to write to S3 and emit CloudWatch log events |
+| `DeliveryStreamLogGroup` | `AWS::Logs::LogGroup` | Firehose delivery logs (`/aws/kinesisfirehose/DATADOG-LOGS`) |
+
+**Outputs:**
+
+| Output | Description |
+|---|---|
+| `DatadogDeliveryStreamARN` | Firehose ARN — use as the destination in CloudWatch Logs subscription filters |
+| `CloudWatchLogsRoleARN` | IAM role ARN — use as `role-arn` in CloudWatch Logs subscription filters |
+| `FailedDataBucketName` | Name of the S3 bucket where failed deliveries are stored |
