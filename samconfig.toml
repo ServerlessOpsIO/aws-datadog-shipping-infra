@@ -4,7 +4,7 @@ version = 0.1
 
 [default]
 [default.global.parameters]
-stack_name = "aws-observability-infra"
+stack_name = "aws-datadog-shipping-infra"
 
 [default.build.parameters]
 cached = true
