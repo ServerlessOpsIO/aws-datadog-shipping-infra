@@ -203,6 +203,11 @@ Outputs:
       The ARN for your Kinesis Firehose Delivery Stream, use this as the
       destination when adding CloudWatch Logs subscription filters
     Value: !GetAtt DatadogDeliveryStream.Arn
+  DatadogLogsDestinationArn:
+    Description: >-
+      The ARN for your CloudWatch Logs Destination, use this as the destination
+      when adding CloudWatch Logs subscription filters
+    Value: !GetAtt DatadogLogsDestination.Arn
   CloudWatchLogsRoleARN:
     Description: >-
       The ARN for your CloudWatch Logs role to write to your delivery stream,
