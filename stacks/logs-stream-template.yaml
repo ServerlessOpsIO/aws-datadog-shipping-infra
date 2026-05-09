@@ -171,7 +171,7 @@ Resources:
     Type: AWS::Logs::Destination
     DependsOn: CloudWatchLogsPolicy
     Properties:
-      DestinationName: DATADOG-LOGS-FIREHOSE
+      DestinationName: DATADOG-LOGS
       DestinationPolicy: !Sub '{
         "Version": "2012-10-17",
         "Statement": [
@@ -182,7 +182,7 @@ Resources:
               "logs:PutSubscriptionFilter",
               "logs:PutAccountPolicy"
             ],
-            "Resource": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:destination:DATADOG-LOGS-FIREHOSE",
+            "Resource": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:destination:DATADOG-LOGS",
             "Condition": {
               "StringEquals": {
                 "aws:PrincipalOrgID": "${AwsOrgId}"
