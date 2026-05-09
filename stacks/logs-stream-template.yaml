@@ -198,7 +198,7 @@ Outputs:
   FailedDataBucketName:
     Description: S3 Bucket where failed deliveries will be saved
     Value: !Ref FailedDataBucket
-  DatadogDeliveryStreamARN:
+  DatadogDeliveryStreamArn:
     Description: >-
       The ARN for your Kinesis Firehose Delivery Stream, use this as the
       destination when adding CloudWatch Logs subscription filters
@@ -208,7 +208,7 @@ Outputs:
       The ARN for your CloudWatch Logs Destination, use this as the destination
       when adding CloudWatch Logs subscription filters
     Value: !GetAtt DatadogLogsDestination.Arn
-  CloudWatchLogsRoleARN:
+  CloudWatchLogsRoleArn:
     Description: >-
       The ARN for your CloudWatch Logs role to write to your delivery stream,
       use this as the role-arn when adding CloudWatch Logs subscription filters
