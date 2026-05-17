@@ -23,7 +23,7 @@ jobs:
           build_aws_account_id: ${{ secrets.AWS_CICD_ACCOUNT_ID }}
 
       - name: Install AWS SAM
-        uses: aws-actions/setup-sam@v2
+        uses: aws-actions/setup-sam@v3
 
       - name: Validate template
         run: sam validate --lint
